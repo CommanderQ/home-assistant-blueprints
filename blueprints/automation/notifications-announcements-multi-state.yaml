@@ -105,18 +105,12 @@ blueprint:
               custom_value: true
               mode: dropdown
               options:
-                - label: ON
-                  value: "on"
-                - label: OFF
-                  value: "off"
-                - label: Unavailable
-                  value: "unavailable"
-                - label: Unknown
-                  value: "unknown"
-                - label: Home
-                  value: "home"
-                - label: Not Home
-                  value: "not_home"
+                - "on"
+                - "off"
+                - "unavailable"
+                - "unknown"
+                - "home"
+                - "not_home"
         transition_from_states:
           name: Transition - From States
           description: >
@@ -130,18 +124,12 @@ blueprint:
               custom_value: true
               mode: dropdown
               options:
-                - label: ON
-                  value: "on"
-                - label: OFF
-                  value: "off"
-                - label: Unavailable
-                  value: "unavailable"
-                - label: Unknown
-                  value: "unknown"
-                - label: Home
-                  value: "home"
-                - label: Not Home
-                  value: "not_home"
+                - "on"
+                - "off"
+                - "unavailable"
+                - "unknown"
+                - "home"
+                - "not_home"
         transition_to_states:
           name: Transition - To States
           description: >
@@ -155,18 +143,12 @@ blueprint:
               custom_value: true
               mode: dropdown
               options:
-                - label: ON
-                  value: "on"
-                - label: OFF
-                  value: "off"
-                - label: Unavailable
-                  value: "unavailable"
-                - label: Unknown
-                  value: "unknown"
-                - label: Home
-                  value: "home"
-                - label: Not Home
-                  value: "not_home"
+                - "on"
+                - "off"
+                - "unavailable"
+                - "unknown"
+                - "home"
+                - "not_home"
         transition_to_exclude_states:
           name: Transition - To States (Excluded)
           description: >
@@ -180,18 +162,12 @@ blueprint:
               custom_value: true
               mode: dropdown
               options:
-                - label: ON
-                  value: "on"
-                - label: OFF
-                  value: "off"
-                - label: Unavailable
-                  value: "unavailable"
-                - label: Unknown
-                  value: "unknown"
-                - label: Home
-                  value: "home"
-                - label: Not Home
-                  value: "not_home"
+                - "on"
+                - "off"
+                - "unavailable"
+                - "unknown"
+                - "home"
+                - "not_home"
         trigger_numeric_entity:
           name: Numeric State Entities
           description: >
