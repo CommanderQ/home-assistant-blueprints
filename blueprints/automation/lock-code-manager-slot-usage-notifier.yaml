@@ -3,18 +3,28 @@ blueprint:
   description: >
     # 🔐 Lock Code Manager: Slot Usage Notifier (Enhanced)
 
-    **Version: 1.0** — Based on [raman325's Slot Usage Notifier](https://github.com/raman325/lock_code_manager/blob/main/blueprints/automation/lock_code_manager/slot_usage_notifier.yaml)
+    **Version: 1.1** — Based on [raman325's Slot Usage Notifier](https://github.com/raman325/lock_code_manager/blob/main/blueprints/automation/lock_code_manager/slot_usage_notifier.yaml)
     with mobile app, UI, TTS, and custom action notification options from
     [Blackshome's Notifications & Announcements](https://gist.github.com/Blackshome/180ca4a24af81cd5d843acfc039039bc).
 
-    Runs when a Lock Code Manager code slot PIN is used on a lock.
+    Runs when a Lock Code Manager credential is used on a lock or other target.
 
 
     **How it works**
 
-    When a code slot event fires (PIN used on lock), the automation can send
-    mobile app notifications, UI notifications, Text-to-Speech announcements,
-    and/or custom actions.
+    When a credential used event fires, the automation can send mobile app
+    notifications, UI notifications, Text-to-Speech announcements, and/or
+    custom actions.
+
+    Every use recorded on the credential used event entity runs this automation:
+    a lock reporting which code slot unlocked it, a lock reporting which code
+    slot *locked* it, and a use reported through the
+    `lock_code_manager.use_credential` action from a keypad or door controller
+    Home Assistant cannot watch.
+
+    That includes locking by code — a guest who unlocks with their PIN and
+    locks up behind them with the same PIN runs the automation twice. Use
+    `operation` in your message, or filter by operation below.
 
     **Available template variables**
 
@@ -22,21 +32,22 @@ blueprint:
 
     - `slot_num` — the code slot number that was used
     - `slot_name` — the user-configured name of the code slot
-    - `lock_name` — the friendly name of the lock where the PIN was used
-    - `lock_entity_id` — the lock entity ID
+    - `lock_name` — the friendly name of the target (falls back to the target id)
+    - `lock_entity_id` — the target entity ID the credential was used against
     - `timestamp` — the date and time the event occurred
+    - `operation` — what the device did: `unlock`, `lock`, or `unknown`
+    - `credential_type` — the kind of credential presented (`pin` today)
 
     **Requirements**
 
-    This blueprint requires at least one lock that supports code slot events
-    (i.e. produces `*_code_slot_*_pin_used` events) via the Lock Code Manager
-    integration.
+    This blueprint requires the Lock Code Manager integration and at least one
+    credential used event entity.
 
     **Setup**
 
     1. Import this blueprint and create an automation from it.
-    2. Select one or more code slot event entities to monitor.
-    3. Optionally restrict to specific locks.
+    2. Select one or more credential used event entities to monitor.
+    3. Optionally restrict to specific locks and/or operations.
     4. Enable the notification options you want to use.
   domain: automation
   input:
@@ -46,11 +57,11 @@ blueprint:
       collapsed: true
       input:
         event_entity:
-          name: Code slot event entities *
+          name: Credential used event entities *
           description: >
             One or more Lock Code Manager event entities that fire when a
-            PIN is used. These are named like "Code slot X PIN used". The
-            automation runs whenever any of the selected entities fire.
+            user's credential is used. Each is named for the user who holds
+            the slot. The automation runs whenever any of them fire.
           selector:
             entity:
               domain: event
@@ -62,13 +73,35 @@ blueprint:
             Restrict the automation to a specific lock or set of locks.
             When empty, the actions run for any lock the event entity
             reports. When one or more locks are selected, the actions
-            only run when one of those locks is the lock that used the
-            PIN.
+            only run when one of those locks is the lock the credential
+            was used on.
           default: []
           selector:
             entity:
               domain: lock
               multiple: true
+        operations:
+          name: Operations (optional)
+          description: >
+            Restrict which credential operations should notify.
+            Leave empty (or select all) to run for every operation.
+            Select only Unlock to ignore lock-by-code events, or only Lock
+            for lock-up events.
+          default:
+            - unlock
+            - lock
+            - unknown
+          selector:
+            select:
+              multiple: true
+              mode: list
+              options:
+                - label: Unlock
+                  value: "unlock"
+                - label: Lock
+                  value: "lock"
+                - label: Unknown
+                  value: "unknown"
     device_notify_settings:
       name: "Mobile App Notify"
       icon: mdi:devices
@@ -89,7 +122,7 @@ blueprint:
         notify_device:
           name: Devices Notified
           description: >
-            Select the devices to be notified when a PIN is used.
+            Select the devices to be notified when a credential is used.
           default: []
           selector:
             device:
@@ -100,8 +133,9 @@ blueprint:
           name: Title
           description: >
             Enter in the title of your notification.
-            Templates are supported, for example `{{ lock_name }}` or `{{ slot_name }}`.
-          default: "🔐 PIN used on {{ lock_name }}"
+            Templates are supported, for example `{{ lock_name }}`, `{{ slot_name }}`,
+            or `{{ operation }}`.
+          default: "🔐 {{ slot_name }} — {{ operation }} on {{ lock_name }}"
           selector:
             text:
         notify_message:
@@ -109,8 +143,8 @@ blueprint:
           description: >
             Enter in the message of your notification.
             Templates are supported. Available variables: `slot_name`, `slot_num`,
-            `lock_name`, `lock_entity_id`, `timestamp`.
-          default: "{{ slot_name }} (slot {{ slot_num }}) used a PIN on {{ lock_name }} at {{ timestamp }}"
+            `lock_name`, `lock_entity_id`, `timestamp`, `operation`, `credential_type`.
+          default: "{{ slot_name }} (slot {{ slot_num }}) used a {{ credential_type }} to {{ operation }} {{ lock_name }} at {{ timestamp }}"
           selector:
             text:
         notify_tag:
@@ -251,8 +285,9 @@ blueprint:
           name: Title
           description: >
             Enter in the title of your UI notification.
-            Templates are supported, for example `{{ lock_name }}` or `{{ slot_name }}`.
-          default: "🔐 PIN used on {{ lock_name }}"
+            Templates are supported, for example `{{ lock_name }}`, `{{ slot_name }}`,
+            or `{{ operation }}`.
+          default: "🔐 {{ slot_name }} — {{ operation }} on {{ lock_name }}"
           selector:
             text:
         persistent_message:
@@ -260,8 +295,8 @@ blueprint:
           description: >
             Enter in the message of your UI notification.
             Templates are supported. Available variables: `slot_name`, `slot_num`,
-            `lock_name`, `lock_entity_id`, `timestamp`.
-          default: "{{ slot_name }} (slot {{ slot_num }}) used a PIN on {{ lock_name }} at {{ timestamp }}"
+            `lock_name`, `lock_entity_id`, `timestamp`, `operation`, `credential_type`.
+          default: "{{ slot_name }} (slot {{ slot_num }}) used a {{ credential_type }} to {{ operation }} {{ lock_name }} at {{ timestamp }}"
           selector:
             text:
         persistent_id:
@@ -317,8 +352,8 @@ blueprint:
           description: >
             Enter in the message of your Text-to-Speech announcement.
             Templates are supported. Available variables: `slot_name`, `slot_num`,
-            `lock_name`, `lock_entity_id`, `timestamp`.
-          default: "{{ slot_name }} used a PIN on {{ lock_name }}"
+            `lock_name`, `lock_entity_id`, `timestamp`, `operation`, `credential_type`.
+          default: "{{ slot_name }} used a {{ credential_type }} to {{ operation }} {{ lock_name }}"
           selector:
             text:
               multiline: true
@@ -333,7 +368,8 @@ blueprint:
             Customize your automation with any action you desire.
             It is commonly used for playing announcements on The Voice (HA), Google, Alexa, etc.
             Additionally, it can be utilized for other notification services or any other actions you would like to perform.
-            Template variables `slot_name`, `slot_num`, `lock_name`, `lock_entity_id`, and `timestamp` are available.
+            Template variables `slot_name`, `slot_num`, `lock_name`, `lock_entity_id`,
+            `timestamp`, `operation`, and `credential_type` are available.
           default: disable_custom_actions
           selector:
             select:
@@ -432,6 +468,7 @@ max: 10
 variables:
   event_entity_id: !input event_entity
   locks: !input locks
+  operations: !input operations
   include_notify: !input include_notify
   notify_device: !input notify_device
   notify_title: !input notify_title
@@ -460,21 +497,46 @@ variables:
   before_time: !input before_time
   weekday_options: !input weekday_options
   global_conditions: !input global_conditions
+  # Variables are computed before conditions run, so guard every
+  # `trigger.to_state` access against the entity-removal case
+  # (`to_state is None`) — otherwise the variable rendering errors
+  # out before the conditions below can block the action.
+  #
+  # `event_type` is the fixed word `credential_used` and names nothing;
+  # `target` is what the credential was used against, which is a lock when
+  # a lock observed the use and can be anything at all when the
+  # `use_credential` action reported one.
+  #
+  # Read off the trigger's own snapshot rather than the entity's live state:
+  # `mode: queued` runs this behind up to nine other uses, and a live read
+  # would pair this trigger with whatever target arrived last.
   lock_entity_id: >-
-    {{ state_attr(trigger.entity_id, 'event_type') }}
+    {{ trigger.to_state.attributes.target | default(none, true)
+    if trigger.to_state is not none else none }}
   slot_name: >-
-    {{ trigger.to_state.attributes.code_slot_name | default('Unknown slot')
+    {{ trigger.to_state.attributes.name | default('Unknown slot')
     if trigger.to_state is not none else 'Unknown slot' }}
   slot_num: >-
     {{ trigger.to_state.attributes.code_slot | default('?')
     if trigger.to_state is not none else '?' }}
+  # A target can be an entity Home Assistant holds no state for at all --
+  # a gate, a door controller with no integration -- so falling back to the
+  # target's own id says more than 'Unknown lock' ever would.
   lock_name: >-
-    {{ state_attr(lock_entity_id, 'friendly_name') | default('Unknown lock')
+    {{ state_attr(lock_entity_id, 'friendly_name')
+    | default(lock_entity_id, true)
     if lock_entity_id is not none else 'Unknown lock' }}
   timestamp: >-
     {{ (trigger.to_state.last_updated | as_local
     | as_timestamp | timestamp_custom('%Y-%m-%d %H:%M:%S'))
     if trigger.to_state is not none else '' }}
+  operation: >-
+    {{ trigger.to_state.attributes.operation | default('unknown', true)
+    if trigger.to_state is not none else 'unknown' }}
+  # The entity's event type is the kind of credential presented, not a place.
+  credential_type: >-
+    {{ trigger.to_state.attributes.event_type | default('unknown', true)
+    if trigger.to_state is not none else 'unknown' }}
 
   device_message_data: >-
     {% set message = namespace(data={}) %}
@@ -543,6 +605,12 @@ triggers:
       - unavailable
 
 condition:
+  # Block transitions that aren't real credential uses:
+  # - `from_state is None` -> entity first-appearance after a
+  #   config-entry reload or restart
+  # - `to_state is None` -> entity removal (LCM unload)
+  # - `from_state.state == 'unavailable'` -> underlying lock dropped
+  #   offline and recovered
   - condition: template
     value_template: >-
       {{ trigger.from_state is not none
@@ -551,6 +619,9 @@ condition:
   - condition: template
     value_template: >-
       {{ locks | count == 0 or lock_entity_id in locks }}
+  - condition: template
+    value_template: >-
+      {{ operations | count == 0 or operation in operations }}
   - condition: or
     conditions:
       - condition: template
