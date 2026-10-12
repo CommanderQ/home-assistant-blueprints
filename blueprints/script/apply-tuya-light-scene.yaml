@@ -1,0 +1,281 @@
+# LAN scene_data_v2 is hex, not the cloud JSON object.
+# Layout, from Tuya's light instruction set and TinyTuya BulbDevice.set_scene:
+#   2 hex chars: scene number
+#   then 26 hex chars per color:
+#     switch duration (1 byte, 0-100)
+#     fade duration (1 byte, 0-100)
+#     mode (1 byte: 0 static, 1 jump, 2 gradient)
+#     hue (2 bytes, 0-360)
+#     saturation (2 bytes, 0-1000)
+#     value (2 bytes, 0-1000)
+#     white brightness (2 bytes, 0-1000)
+#     color temperature (2 bytes, 0-1000)
+# LocalTuya writes that string to the scene datapoint and sets work mode to scene.
+blueprint:
+  name: Apply a Tuya light scene
+  description: >
+    # Apply a Tuya light scene
+
+    **Version: 1.0**
+
+
+    Compose a LocalTuya scene from a behavior and up to four colors, then
+    send it to the selected lights.
+
+
+    **How it works**
+
+    Create a script from this blueprint, then run that script. Each run asks
+    for the lights, the scene behavior, and the colors. The script encodes a
+    `scene_data_v2` string and writes it with `localtuya.set_dp`, the same
+    three datapoints LocalTuya sets when a known scene is selected: the
+    switch, the work mode (`scene`), and the scene string.
+
+    The light picker accepts areas, floors, labels, light groups, devices,
+    and individual lights. A light is included when it belongs to any
+    selected area, floor, or label, or when it is selected directly. Lights
+    that are not LocalTuya devices are skipped.
+
+    Leave unused color pickers empty. One color is enough for a static
+    scene. Jump and gradient use each filled color as one step.
+
+    This encodes the v2 scene string used by current Tuya bulbs (hue,
+    saturation, and value on a 0–1000 scale). It does not encode the older
+    14-character `scene_data` string or the BLE base64 scene string.
+
+    The switch, work-mode, and scene datapoint numbers have to match the
+    light in LocalTuya. The sample bulb uses 20, 21, and 25. Copy the values
+    from the light's LocalTuya configuration if a run has no effect.
+  domain: script
+mode: queued
+fields:
+  lights:
+    name: Lights
+    description: Areas, floors, labels, groups, or individual LocalTuya lights
+    required: true
+    selector:
+      target:
+        entity:
+          domain: light
+  behavior:
+    name: Scene behavior
+    required: true
+    default: static
+    selector:
+      select:
+        mode: dropdown
+        options:
+          - label: Static
+            value: static
+          - label: Jump
+            value: jump
+          - label: Gradient
+            value: gradient
+  hold:
+    name: Time between colors
+    description: How long each color is held, from 0 to 100
+    required: true
+    default: 20
+    selector:
+      number:
+        min: 0
+        max: 100
+        step: 1
+        mode: slider
+  fade:
+    name: Fade time
+    description: How long a gradient takes to reach the next color, from 0 to 100
+    required: true
+    default: 20
+    selector:
+      number:
+        min: 0
+        max: 100
+        step: 1
+        mode: slider
+  brightness:
+    name: Brightness
+    description: Scales every color. 100% uses the picked color at full value
+    required: true
+    default: 100
+    selector:
+      number:
+        min: 1
+        max: 100
+        step: 1
+        unit_of_measurement: "%"
+        mode: slider
+  color_1:
+    name: Color 1
+    required: true
+    selector:
+      color_rgb:
+  color_2:
+    name: Color 2
+    required: false
+    selector:
+      color_rgb:
+  color_3:
+    name: Color 3
+    required: false
+    selector:
+      color_rgb:
+  color_4:
+    name: Color 4
+    required: false
+    selector:
+      color_rgb:
+  scene_number:
+    name: Scene number
+    description: First byte of the scene string. 1 is a safe custom scene
+    required: true
+    default: 1
+    selector:
+      number:
+        min: 0
+        max: 255
+        step: 1
+        mode: box
+  switch_dp:
+    name: Switch datapoint
+    description: LocalTuya switch datapoint for these lights
+    required: true
+    default: 20
+    selector:
+      number:
+        min: 1
+        max: 255
+        step: 1
+        mode: box
+  mode_dp:
+    name: Work mode datapoint
+    description: LocalTuya color-mode datapoint for these lights
+    required: true
+    default: 21
+    selector:
+      number:
+        min: 1
+        max: 255
+        step: 1
+        mode: box
+  scene_dp:
+    name: Scene datapoint
+    description: LocalTuya scene datapoint for these lights
+    required: true
+    default: 25
+    selector:
+      number:
+        min: 1
+        max: 255
+        step: 1
+        mode: box
+  work_mode:
+    name: Work mode value
+    description: Value that puts the bulb in scene mode
+    required: true
+    default: scene
+    selector:
+      text:
+sequence:
+  - variables:
+      scene_payload: >
+        {% if behavior == 'jump' %}
+          {% set mode_byte = 1 %}
+        {% elif behavior == 'gradient' %}
+          {% set mode_byte = 2 %}
+        {% else %}
+          {% set mode_byte = 0 %}
+        {% endif %}
+        {% set scale = (brightness | float(100)) / 100 %}
+        {% set steps = namespace(colors=[]) %}
+        {% for candidate in [color_1, color_2 | default(none, true), color_3 | default(none, true), color_4 | default(none, true)] %}
+          {% if candidate is sequence and candidate | length == 3 %}
+            {% set steps.colors = steps.colors + [candidate] %}
+          {% endif %}
+        {% endfor %}
+        {% set packed = namespace(body='') %}
+        {% for color in steps.colors %}
+          {% set r = color[0] | float / 255 %}
+          {% set g = color[1] | float / 255 %}
+          {% set b = color[2] | float / 255 %}
+          {% set mx = [r, g, b] | max %}
+          {% set df = mx - ([r, g, b] | min) %}
+          {% if df < 0.0000001 %}
+            {% set hue = 0 %}
+          {% elif r >= g and r >= b %}
+            {% set hue = (60 * ((g - b) / df) + 360) % 360 %}
+          {% elif g >= r and g >= b %}
+            {% set hue = (60 * ((b - r) / df) + 120) % 360 %}
+          {% else %}
+            {% set hue = (60 * ((r - g) / df) + 240) % 360 %}
+          {% endif %}
+          {% set sat = 0 if mx == 0 else (df / mx * 1000) %}
+          {% set val = mx * 1000 * scale %}
+          {% set hue = [[hue | round(0) | int, 0] | max, 360] | min %}
+          {% set sat = [[sat | round(0) | int, 0] | max, 1000] | min %}
+          {% set val = [[val | round(0) | int, 0] | max, 1000] | min %}
+          {% set packed.body = packed.body
+              + ("%02x" | format(hold | int))
+              + ("%02x" | format(fade | int))
+              + ("%02x" | format(mode_byte | int))
+              + ("%04x" | format(hue | int))
+              + ("%04x" | format(sat | int))
+              + ("%04x" | format(val | int))
+              + "00000000" %}
+        {% endfor %}
+        {{ "%02x" | format(scene_number | int) }}{{ packed.body }}
+      tuya_ids: >
+        {% set ns = namespace(ids=[]) %}
+        {% set chosen = lights.entity_id | default([]) %}
+        {% if chosen is string %}
+          {% set chosen = [chosen] %}
+        {% endif %}
+        {% for item in chosen %}
+          {% set ns.ids = ns.ids + (expand(item) | map(attribute='entity_id') | list) %}
+        {% endfor %}
+        {% for did in lights.device_id | default([]) %}
+          {% set ns.ids = ns.ids + (device_entities(did) | list) %}
+        {% endfor %}
+        {% for aid in lights.area_id | default([]) %}
+          {% set ns.ids = ns.ids + (area_entities(aid) | list) %}
+        {% endfor %}
+        {% for lid in lights.label_id | default([]) %}
+          {% set ns.ids = ns.ids + (label_entities(lid) | list) %}
+        {% endfor %}
+        {% for fid in lights.floor_id | default([]) %}
+          {% set ns.ids = ns.ids + (floor_entities(fid) | list) %}
+        {% endfor %}
+        {% set found = namespace(ids=[]) %}
+        {% for eid in ns.ids | select('match', '^light\.') | unique | list %}
+          {% for domain, raw in device_attr(eid, 'identifiers') | default([]) %}
+            {% if domain == 'localtuya' and raw is string and raw.startswith('local_') %}
+              {% set tid = raw.removeprefix('local_') %}
+              {% if tid not in found.ids %}
+                {% set found.ids = found.ids + [tid] %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+        {{ found.ids }}
+  - if:
+      - condition: template
+        value_template: "{{ scene_payload | length < 28 }}"
+    then:
+      - stop: "Choose at least one color"
+  - if:
+      - condition: template
+        value_template: "{{ tuya_ids | length == 0 }}"
+    then:
+      - stop: "None of the selected lights expose a LocalTuya device id"
+  - repeat:
+      for_each: "{{ tuya_ids }}"
+      sequence:
+        - action: localtuya.set_dp
+          data:
+            device_id: "{{ repeat.item }}"
+            value: >
+              {{ {
+                (switch_dp | int | string): true,
+                (mode_dp | int | string): work_mode,
+                (scene_dp | int | string): scene_payload
+              } }}
