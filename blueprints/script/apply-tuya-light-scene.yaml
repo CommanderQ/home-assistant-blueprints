@@ -16,7 +16,7 @@ blueprint:
   description: >
     # Apply a Tuya light scene
 
-    **Version: 1.0**
+    **Version: 1.2**
 
 
     Compose a LocalTuya scene from a behavior and up to four colors, then
@@ -43,9 +43,10 @@ blueprint:
     saturation, and value on a 0–1000 scale). It does not encode the older
     14-character `scene_data` string or the BLE base64 scene string.
 
-    The switch, work-mode, and scene datapoint numbers have to match the
-    light in LocalTuya. The sample bulb uses 20, 21, and 25. Copy the values
-    from the light's LocalTuya configuration if a run has no effect.
+    Color bulbs and light strips use switch 20, work mode 21, and scene 25,
+    with work mode set to `scene`. That is the standard v2 map from
+    LocalTuya's sample bulb and TinyTuya's type B bulbs, and the script
+    sends those datapoints directly.
   domain: script
 mode: queued
 fields:
@@ -136,46 +137,6 @@ fields:
         max: 255
         step: 1
         mode: box
-  switch_dp:
-    name: Switch datapoint
-    description: LocalTuya switch datapoint for these lights
-    required: true
-    default: 20
-    selector:
-      number:
-        min: 1
-        max: 255
-        step: 1
-        mode: box
-  mode_dp:
-    name: Work mode datapoint
-    description: LocalTuya color-mode datapoint for these lights
-    required: true
-    default: 21
-    selector:
-      number:
-        min: 1
-        max: 255
-        step: 1
-        mode: box
-  scene_dp:
-    name: Scene datapoint
-    description: LocalTuya scene datapoint for these lights
-    required: true
-    default: 25
-    selector:
-      number:
-        min: 1
-        max: 255
-        step: 1
-        mode: box
-  work_mode:
-    name: Work mode value
-    description: Value that puts the bulb in scene mode
-    required: true
-    default: scene
-    selector:
-      text:
 sequence:
   - variables:
       scene_payload: >
@@ -275,7 +236,7 @@ sequence:
             device_id: "{{ repeat.item }}"
             value: >
               {{ {
-                (switch_dp | int | string): true,
-                (mode_dp | int | string): work_mode,
-                (scene_dp | int | string): scene_payload
+                '20': true,
+                '21': 'scene',
+                '25': scene_payload
               } }}
